@@ -1,0 +1,9 @@
+.git
+.gradle
+.kotlin
+build
+docs
+docker-compose.yml
+.env
+.env.example
+*.md
