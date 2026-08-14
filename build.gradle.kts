@@ -33,7 +33,7 @@ dependencies {
     implementation("io.ktor:ktor-server-rate-limit:$ktorVersion")
     implementation("io.ktor:ktor-server-config-yaml:$ktorVersion")
 
-    // Ktor client (calls to API-Football / Twilio / Google / Apple / Facebook)
+    // Ktor client (calls to API-Football / Google / Facebook)
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
@@ -52,7 +52,6 @@ dependencies {
 
     // Auth
     implementation("com.auth0:java-jwt:4.4.0")
-    implementation("com.auth0:jwks-rsa:0.22.1")
     implementation("at.favre.lib:bcrypt:0.10.2")
 
     // Coroutines / serialization / logging

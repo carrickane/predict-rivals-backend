@@ -48,7 +48,6 @@ class GoogleAuthProvider(
             providerUserId = info.sub,
             name = info.name,
             email = info.email,
-            phone = null,
         )
         return AuthenticatedUser(user.id, user.name, user.role)
     }

@@ -26,8 +26,11 @@ Base URL: wherever the Ktor app is deployed (local dev: `http://localhost:8080`)
 
 ## 2. Auth
 
-Five sign-in methods, all converging on the same token pair. Store `accessToken` (short-lived,
-used on every request) and `refreshToken` (long-lived, used only to get a new pair).
+Three sign-in methods, all converging on the same token pair. Store `accessToken` (short-lived,
+used on every request) and `refreshToken` (long-lived, used only to get a new pair). (Phone/SMS
+and Apple Sign In were both considered but cut on cost grounds — no free-forever SMS provider
+exists for arbitrary numbers, and Apple Sign In requires a paid $99/year Apple Developer
+Program membership with no free tier.)
 
 ### 2.1 Email/password
 
@@ -47,39 +50,19 @@ never reveals whether the email exists, so don't build UI that assumes it can).
 
 Both endpoints are rate-limited (10 requests/minute per IP) — handle `429` by backing off.
 
-### 2.2 Google / Apple / Facebook
+### 2.2 Google / Facebook
 
-All three take the client-obtained token and exchange it server-side (the backend verifies it
+Both take the client-obtained token and exchange it server-side (the backend verifies it
 independently — never trust a client-side "logged in" state without this exchange):
 
 ```
 POST /api/auth/google     { "idToken": "<Google ID token from the client SDK>" }
-POST /api/auth/apple      { "idToken": "<Apple identity token from Sign in with Apple>" }
 POST /api/auth/facebook   { "idToken": "<Facebook access token from the Facebook SDK>" }
 ```
 Each returns `200` `AuthResponse`, or `401` if the token fails verification (expired, wrong
 audience/app, tampered).
 
-### 2.3 Phone / SMS
-
-Two steps:
-
-`POST /api/auth/phone/request-code`
-```json
-{ "phone": "+15551234567" }
-```
-Returns `202 Accepted` with no body. Triggers an SMS with a 6-digit code (expires in 5 minutes).
-Rate-limited to 3 requests/10 minutes per IP — show a "resend" cooldown in the UI rather than
-letting users spam this.
-
-`POST /api/auth/phone/verify`
-```json
-{ "phone": "+15551234567", "code": "123456" }
-```
-Returns `200` `AuthResponse`, or `401` if the code is wrong, expired, or already used (each code
-allows at most 5 verify attempts). Rate-limited to 5 requests/10 minutes per IP.
-
-### 2.4 Refresh
+### 2.3 Refresh
 
 `POST /api/auth/refresh`
 ```json
@@ -89,7 +72,7 @@ Returns a new `{ "accessToken": "...", "refreshToken": "..." }` pair. **The refr
 single-use** — each call rotates it, so always overwrite your stored refresh token with the new
 one from the response. If this call 401s, the session is dead and the user must sign in again.
 
-### 2.5 Shapes
+### 2.4 Shapes
 
 ```ts
 type AuthResponse = {

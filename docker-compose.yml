@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: predict_rivals
       POSTGRES_USER: predict_rivals
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_PASSWORD: 280790e5b9002876b4e658d983055e98
     ports:
       - "5432:5432"
     volumes:

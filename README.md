@@ -46,7 +46,7 @@ tests use Testcontainers, which requires Docker to be running.
 
 ```
 src/main/kotlin/com/predictrivals/
-  auth/          # AuthProvider + email/Google/Apple/Facebook/phone providers, JWT issuance
+  auth/          # AuthProvider + email/Google/Facebook providers, JWT issuance
   tournament/     # Tournament, join-tournament
   rounds/         # Round lifecycle, calendar
   adminMatches/   # Admin-curated matches, fixture search

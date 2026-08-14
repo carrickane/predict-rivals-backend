@@ -6,12 +6,9 @@ import com.predictrivals.auth.AuthProviders
 import com.predictrivals.auth.AuthRepository
 import com.predictrivals.auth.TokenService
 import com.predictrivals.auth.authRoutes
-import com.predictrivals.auth.providers.AppleAuthProvider
 import com.predictrivals.auth.providers.EmailPasswordProvider
 import com.predictrivals.auth.providers.FacebookAuthProvider
 import com.predictrivals.auth.providers.GoogleAuthProvider
-import com.predictrivals.auth.providers.PhoneAuthProvider
-import com.predictrivals.auth.providers.TwilioSmsSender
 import com.predictrivals.common.AdminAuditLogRepository
 import com.predictrivals.common.AppConfig
 import com.predictrivals.common.AppHttpClient
@@ -51,6 +48,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 fun main() {
+    // The app stores everything as TIMESTAMPTZ / OffsetDateTime and must behave identically
+    // regardless of the host machine's locale — pin the JVM default to UTC before anything
+    // (including the JDBC connection pool) can read the host's timezone setting.
+    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     embeddedServer(Netty, port = port, host = "0.0.0.0", module = Application::module).start(wait = true)
 }
@@ -74,13 +76,10 @@ fun Application.module() {
 
     // Auth
     val tokenService = TokenService(jwtService, authRepository)
-    val smsSender = TwilioSmsSender(httpClient, config.twilioAccountSid, config.twilioAuthToken, config.twilioFromNumber)
     val authProviders = AuthProviders(
         emailPassword = EmailPasswordProvider(authRepository),
         google = GoogleAuthProvider(authRepository, httpClient, config.googleClientId),
-        apple = AppleAuthProvider(authRepository, config.appleClientId),
         facebook = FacebookAuthProvider(authRepository, httpClient, config.facebookAppId, config.facebookAppSecret),
-        phone = PhoneAuthProvider(authRepository, smsSender),
     )
 
     // Football data + scoring

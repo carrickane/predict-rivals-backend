@@ -24,7 +24,7 @@ Layered structure, routes → services → repositories. Package layout:
 
 ```
 src/main/kotlin/
-  auth/          # AuthProvider interface + EmailPassword/Google/Apple/Facebook/PhoneSms impls, JWT issuance
+  auth/          # AuthProvider interface + EmailPassword/Google/Facebook impls, JWT issuance
   tournament/    # Tournament, join-tournament
   rounds/        # Rounds, round lifecycle (scheduled -> live -> finished)
   adminMatches/  # AdminMatches CRUD (admin_ref schema), fixture curation from football API
@@ -57,10 +57,10 @@ Single Postgres instance, two schemas:
 ### `game` schema
 
 **`users`**
-- id, name, email (nullable), phone (nullable), avatar_url, role (`player` / `admin`, default `player`), created_at
+- id, name, email (nullable), avatar_url, role (`player` / `admin`, default `player`), created_at
 
 **`auth_identities`**
-- id, user_id, provider (`email` / `google` / `apple` / `facebook` / `phone`), provider_user_id, password_hash (email provider only), created_at
+- id, user_id, provider (`email` / `google` / `facebook`), provider_user_id, password_hash (email provider only), created_at
 - unique constraint on (provider, provider_user_id) — allows a user to have multiple linked providers without changing `users`
 
 **`tournaments`**
@@ -117,12 +117,18 @@ interface AuthProvider {
 }
 ```
 
-All five methods implemented in this pass:
+Three methods implemented in this pass:
 - **Email/password** — bcrypt hash, register + login
 - **Google** — verify Google ID token against Google's JWKs
-- **Apple** — verify Apple identity token (JWT) against Apple's public keys
 - **Facebook** — verify access token via Graph API debug_token
-- **Phone/SMS** — two-step (request code via Twilio, verify code). Twilio is the default SMS delivery provider; swap later if needed.
+
+Two methods were cut, both purely on cost grounds, not technical ones — revisit either if that
+tradeoff changes:
+- **Phone/SMS** — no free-forever SMS provider exists for sending to arbitrary numbers; the free
+  options all require either a paid tier past a trial credit, or a different architecture
+  entirely such as Firebase Phone Auth.
+- **Apple Sign In** — requires a paid Apple Developer Program membership ($99/year); there is no
+  free tier or trial for obtaining Apple Sign In credentials at all.
 
 Every provider normalizes to the same `AuthResult`, which feeds one JWT issuance path. Joining a tournament (`tournament_memberships`) is a separate authenticated action, not part of registration.
 
@@ -188,19 +194,15 @@ This gives the live screen real match scores, the live standings table, and play
 - `GET /api/top-scorers` — top-scorer list (derived from standings)
 - `GET /api/users/:id/stats` — a player's own prediction history, accuracy, trend
 
-**Auth** — one endpoint per provider (register/login for email; token-exchange for Google/Apple/Facebook; request-code/verify-code for phone), all converging on shared JWT issuance.
+**Auth** — one endpoint per provider (register/login for email; token-exchange for Google/Facebook), all converging on shared JWT issuance.
 
 ## 11. Security
 
 **Authentication & session security**
 - JWT access tokens signed with a strong secret, short expiry (15–60 min), with refresh-token rotation for longer sessions. Signing secret loaded from an environment variable, never committed.
 - Passwords hashed with bcrypt (cost factor ≥ 10); never logged or returned in any API response.
-- Google/Apple/Facebook credentials are independently verified server-side (JWKs / debug_token) on every login — a client-supplied identity is never trusted without that check.
+- Google/Facebook credentials are independently verified server-side (JWKs / debug_token) on every login — a client-supplied identity is never trusted without that check.
 - Login/register error responses are generic ("invalid credentials") rather than distinguishing "no such user" from "wrong password," to avoid account enumeration.
-
-**Phone/SMS abuse prevention**
-- OTP codes: 6-digit, single-use, expire after 5 minutes; rate-limited to a small number of send-requests per phone number per 10 minutes and a small number of verify-attempts per code before the code is invalidated.
-- Twilio credentials (account SID, auth token) come from environment variables only.
 
 **Authorization**
 - `users` gains a `role` field (`player` / `admin`). Every `/api/admin/*` route requires `role = admin`, enforced by a Ktor auth plugin — not just hidden in a UI.
@@ -212,12 +214,12 @@ This gives the live screen real match scores, the live standings table, and play
 - Exposed's parameterized queries are used throughout — no raw string-concatenated SQL, so SQL injection isn't a vector.
 
 **Secrets management**
-- All secrets (Postgres credentials, JWT signing secret, API-Football key, Twilio credentials, OAuth client secrets/audiences) are environment variables. `.env` is gitignored; only a `.env.example` with placeholder keys is committed. Production secrets live in Railway's environment variable store.
+- All secrets (Postgres credentials, JWT signing secret, API-Football key, OAuth client secrets/audiences) are environment variables. `.env` is gitignored; only a `.env.example` with placeholder keys is committed. Production secrets live in Railway's environment variable store.
 
 **Transport & network**
 - HTTPS-only in production (Railway terminates TLS; the app rejects/redirects plain HTTP).
 - CORS restricted to known frontend origin(s) — no wildcard in production.
-- Rate limiting on all auth endpoints (login, register, SMS request/verify) to blunt brute-force and credential-stuffing attempts.
+- Rate limiting on the email login/register endpoints to blunt brute-force and credential-stuffing attempts.
 
 **Auditability**
 - Admin actions that mutate scoring-relevant data (e.g. the manual score override endpoint) are logged with the admin's user id, timestamp, and before/after values.

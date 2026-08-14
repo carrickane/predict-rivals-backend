@@ -11,16 +11,13 @@ enum class UserRole {
 enum class AuthProviderType {
     email,
     google,
-    apple,
     facebook,
-    phone,
 }
 
 object UsersTable : Table("game.users") {
     val id = long("id").autoIncrement()
     val name = varchar("name", 128)
     val email = varchar("email", 256).nullable().uniqueIndex()
-    val phone = varchar("phone", 32).nullable().uniqueIndex()
     val avatarUrl = varchar("avatar_url", 512).nullable()
     val role = varchar("role", 16)
     val createdAt = timestampWithTimeZone("created_at")
@@ -49,18 +46,6 @@ object RefreshTokensTable : Table("game.refresh_tokens") {
     val tokenHash = varchar("token_hash", 256).uniqueIndex()
     val expiresAt = timestampWithTimeZone("expires_at")
     val revoked = bool("revoked")
-    val createdAt = timestampWithTimeZone("created_at")
-
-    override val primaryKey = PrimaryKey(id)
-}
-
-object PhoneVerificationCodesTable : Table("game.phone_verification_codes") {
-    val id = long("id").autoIncrement()
-    val phone = varchar("phone", 32)
-    val codeHash = varchar("code_hash", 256)
-    val expiresAt = timestampWithTimeZone("expires_at")
-    val attempts = integer("attempts")
-    val consumed = bool("consumed")
     val createdAt = timestampWithTimeZone("created_at")
 
     override val primaryKey = PrimaryKey(id)

@@ -40,6 +40,13 @@ auto-detected otherwise.
    app needs a `jdbc:postgresql://...` URL instead, so build it from the pieces in the next step
    rather than using Railway's `DATABASE_URL` directly).
 
+   You can see these values yourself by clicking the **Postgres** service box → **Variables** tab
+   (values are masked — click the eye icon to reveal one). You won't need to copy them anywhere,
+   though: step 5 references them live from the backend service instead of pasting literal
+   values. The only thing that has to match exactly is the **service name** shown at the top of
+   this Postgres service's page — if Railway named it something other than "Postgres" (e.g.
+   "Postgres-1"), use that exact name in the `${{...}}` references in step 5.
+
 ---
 
 ## 4. Configure the backend service
@@ -85,13 +92,7 @@ ALLOWED_ORIGINS=<your frontend's real origin(s), comma-separated, no trailing sl
 API_FOOTBALL_KEY=<from api-sports.io>
 API_FOOTBALL_BASE_URL=https://v3.football.api-sports.io
 
-TWILIO_ACCOUNT_SID=<from Twilio console>
-TWILIO_AUTH_TOKEN=<from Twilio console>
-TWILIO_FROM_NUMBER=<a Twilio phone number you own>
-
 GOOGLE_CLIENT_ID=<from Google Cloud Console OAuth client>
-APPLE_CLIENT_ID=<your Apple Sign In services ID>
-APPLE_TEAM_ID=<your Apple Developer team ID>
 FACEBOOK_APP_ID=<from Meta for Developers>
 FACEBOOK_APP_SECRET=<from Meta for Developers>
 ```

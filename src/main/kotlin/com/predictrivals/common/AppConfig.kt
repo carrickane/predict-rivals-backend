@@ -12,11 +12,7 @@ data class AppConfig(
     val allowedOrigins: List<String>,
     val apiFootballKey: String,
     val apiFootballBaseUrl: String,
-    val twilioAccountSid: String,
-    val twilioAuthToken: String,
-    val twilioFromNumber: String,
     val googleClientId: String,
-    val appleClientId: String,
     val facebookAppId: String,
     val facebookAppSecret: String,
 ) {
@@ -39,11 +35,7 @@ data class AppConfig(
                     .split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 apiFootballKey = env("API_FOOTBALL_KEY", ""),
                 apiFootballBaseUrl = env("API_FOOTBALL_BASE_URL", "https://v3.football.api-sports.io"),
-                twilioAccountSid = env("TWILIO_ACCOUNT_SID", ""),
-                twilioAuthToken = env("TWILIO_AUTH_TOKEN", ""),
-                twilioFromNumber = env("TWILIO_FROM_NUMBER", ""),
                 googleClientId = env("GOOGLE_CLIENT_ID", ""),
-                appleClientId = env("APPLE_CLIENT_ID", ""),
                 facebookAppId = env("FACEBOOK_APP_ID", ""),
                 facebookAppSecret = env("FACEBOOK_APP_SECRET", ""),
             )

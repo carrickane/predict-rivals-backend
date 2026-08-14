@@ -18,10 +18,4 @@ object Hashing {
         secureRandom.nextBytes(bytes)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
-
-    /** 6-digit numeric OTP code, e.g. for phone verification. */
-    fun randomNumericCode(digits: Int = 6): String {
-        val bound = Math.pow(10.0, digits.toDouble()).toInt()
-        return secureRandom.nextInt(bound).toString().padStart(digits, '0')
-    }
 }

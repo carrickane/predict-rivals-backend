@@ -63,7 +63,6 @@ class FacebookAuthProvider(
             providerUserId = profile.id,
             name = profile.name,
             email = profile.email,
-            phone = null,
         )
         return AuthenticatedUser(user.id, user.name, user.role)
     }

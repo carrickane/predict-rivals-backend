@@ -9,7 +9,7 @@ import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
 import java.time.OffsetDateTime
 
-data class UserRecord(val id: Long, val name: String, val email: String?, val phone: String?, val role: String)
+data class UserRecord(val id: Long, val name: String, val email: String?, val role: String)
 
 class AuthRepository {
 
@@ -59,7 +59,7 @@ class AuthRepository {
             it[AuthIdentitiesTable.createdAt] = now
         }
 
-        UserRecord(userId, name, email, null, UserRole.player.name)
+        UserRecord(userId, name, email, UserRole.player.name)
     }
 
     suspend fun findOrCreateUserForIdentity(
@@ -67,7 +67,6 @@ class AuthRepository {
         providerUserId: String,
         name: String?,
         email: String?,
-        phone: String?,
     ): UserRecord = dbQuery {
         val existingUserId = AuthIdentitiesTable
             .selectAll().where { (AuthIdentitiesTable.provider eq provider.name) and (AuthIdentitiesTable.providerUserId eq providerUserId) }
@@ -84,7 +83,6 @@ class AuthRepository {
         val userId = UsersTable.insert {
             it[UsersTable.name] = name ?: providerUserId
             it[UsersTable.email] = email
-            it[UsersTable.phone] = phone
             it[UsersTable.role] = UserRole.player.name
             it[UsersTable.createdAt] = now
         } get UsersTable.id
@@ -96,7 +94,7 @@ class AuthRepository {
             it[AuthIdentitiesTable.createdAt] = now
         }
 
-        UserRecord(userId, name ?: providerUserId, email, phone, UserRole.player.name)
+        UserRecord(userId, name ?: providerUserId, email, UserRole.player.name)
     }
 
     suspend fun storeRefreshToken(userId: Long, tokenHash: String, expiresAt: OffsetDateTime) = dbQuery {
@@ -127,45 +125,10 @@ class AuthRepository {
         row[RefreshTokensTable.userId]
     }
 
-    suspend fun storePhoneCode(phone: String, codeHash: String, expiresAt: OffsetDateTime) = dbQuery {
-        PhoneVerificationCodesTable.insert {
-            it[PhoneVerificationCodesTable.phone] = phone
-            it[PhoneVerificationCodesTable.codeHash] = codeHash
-            it[PhoneVerificationCodesTable.expiresAt] = expiresAt
-            it[PhoneVerificationCodesTable.attempts] = 0
-            it[PhoneVerificationCodesTable.consumed] = false
-            it[PhoneVerificationCodesTable.createdAt] = OffsetDateTime.now()
-        }
-        Unit
-    }
-
-    suspend fun verifyAndConsumePhoneCode(phone: String, codeHash: String): Boolean = dbQuery {
-        val row = PhoneVerificationCodesTable
-            .selectAll().where { (PhoneVerificationCodesTable.phone eq phone) and (PhoneVerificationCodesTable.consumed eq false) }
-            .orderBy(PhoneVerificationCodesTable.createdAt to org.jetbrains.exposed.sql.SortOrder.DESC)
-            .firstOrNull()
-            ?: return@dbQuery false
-
-        if (row[PhoneVerificationCodesTable.expiresAt].isBefore(OffsetDateTime.now())) return@dbQuery false
-        if (row[PhoneVerificationCodesTable.attempts] >= 5) return@dbQuery false
-
-        PhoneVerificationCodesTable.update({ PhoneVerificationCodesTable.id eq row[PhoneVerificationCodesTable.id] }) {
-            it[attempts] = row[PhoneVerificationCodesTable.attempts] + 1
-        }
-
-        if (row[PhoneVerificationCodesTable.codeHash] != codeHash) return@dbQuery false
-
-        PhoneVerificationCodesTable.update({ PhoneVerificationCodesTable.id eq row[PhoneVerificationCodesTable.id] }) {
-            it[consumed] = true
-        }
-        true
-    }
-
     private fun org.jetbrains.exposed.sql.ResultRow.toUserRecord() = UserRecord(
         id = this[UsersTable.id],
         name = this[UsersTable.name],
         email = this[UsersTable.email],
-        phone = this[UsersTable.phone],
         role = this[UsersTable.role],
     )
 }
