@@ -57,7 +57,7 @@ Single Postgres instance, two schemas:
 ### `game` schema
 
 **`users`**
-- id, name, email (nullable), phone (nullable), avatar_url, created_at
+- id, name, email (nullable), phone (nullable), avatar_url, role (`player` / `admin`, default `player`), created_at
 
 **`auth_identities`**
 - id, user_id, provider (`email` / `google` / `apple` / `facebook` / `phone`), provider_user_id, password_hash (email provider only), created_at
@@ -190,7 +190,39 @@ This gives the live screen real match scores, the live standings table, and play
 
 **Auth** — one endpoint per provider (register/login for email; token-exchange for Google/Apple/Facebook; request-code/verify-code for phone), all converging on shared JWT issuance.
 
-## 11. Testing & deployment
+## 11. Security
+
+**Authentication & session security**
+- JWT access tokens signed with a strong secret, short expiry (15–60 min), with refresh-token rotation for longer sessions. Signing secret loaded from an environment variable, never committed.
+- Passwords hashed with bcrypt (cost factor ≥ 10); never logged or returned in any API response.
+- Google/Apple/Facebook credentials are independently verified server-side (JWKs / debug_token) on every login — a client-supplied identity is never trusted without that check.
+- Login/register error responses are generic ("invalid credentials") rather than distinguishing "no such user" from "wrong password," to avoid account enumeration.
+
+**Phone/SMS abuse prevention**
+- OTP codes: 6-digit, single-use, expire after 5 minutes; rate-limited to a small number of send-requests per phone number per 10 minutes and a small number of verify-attempts per code before the code is invalidated.
+- Twilio credentials (account SID, auth token) come from environment variables only.
+
+**Authorization**
+- `users` gains a `role` field (`player` / `admin`). Every `/api/admin/*` route requires `role = admin`, enforced by a Ktor auth plugin — not just hidden in a UI.
+- Prediction writes always scope to the authenticated user's own id from the JWT; a client-supplied user id is never accepted for a write.
+- The `tournament_memberships` gate is enforced server-side on every prediction write, not only checked client-side.
+
+**Input validation**
+- All request bodies are validated (e.g. predicted scores must be non-negative integers within a sane bound) before reaching the scoring engine; malformed input is rejected with 400s.
+- Exposed's parameterized queries are used throughout — no raw string-concatenated SQL, so SQL injection isn't a vector.
+
+**Secrets management**
+- All secrets (Postgres credentials, JWT signing secret, API-Football key, Twilio credentials, OAuth client secrets/audiences) are environment variables. `.env` is gitignored; only a `.env.example` with placeholder keys is committed. Production secrets live in Railway's environment variable store.
+
+**Transport & network**
+- HTTPS-only in production (Railway terminates TLS; the app rejects/redirects plain HTTP).
+- CORS restricted to known frontend origin(s) — no wildcard in production.
+- Rate limiting on all auth endpoints (login, register, SMS request/verify) to blunt brute-force and credential-stuffing attempts.
+
+**Auditability**
+- Admin actions that mutate scoring-relevant data (e.g. the manual score override endpoint) are logged with the admin's user id, timestamp, and before/after values.
+
+## 12. Testing & deployment
 
 - Kotest + Testcontainers: integration tests run against a real Postgres instance, not mocks.
 - Flyway migrations versioned under `db/migration`, applied on startup.
