@@ -1,8 +1,9 @@
 # Predict Rivals — Backend API Reference (for frontend & mobile)
 
 This describes everything the backend exposes and the client-side rules needed to use it
-correctly. For internal architecture/data model/security rationale, see
-[docs/superpowers/specs/2026-08-14-backend-design.md](superpowers/specs/2026-08-14-backend-design.md).
+correctly. For internal architecture/data model/security rationale, see the design docs:
+[backend design](superpowers/specs/2026-08-14-backend-design.md) and
+[multi-tournament design](superpowers/specs/2026-08-17-multi-tournament-design.md).
 
 Base URL: wherever the Ktor app is deployed (local dev: `http://localhost:8080`).
 
@@ -18,8 +19,8 @@ Base URL: wherever the Ktor app is deployed (local dev: `http://localhost:8080`)
   { "error": "human-readable message" }
   ```
   with an appropriate HTTP status: `400` bad input, `401` not authenticated, `403` not
-  authorized (wrong role, or not a tournament member), `404` not found, `409` conflict
-  (e.g. duplicate email), `500` unexpected server error.
+  authorized (not the tournament owner, or not a member), `404` not found, `409` conflict (e.g.
+  tournament full, already started, duplicate email), `500` unexpected server error.
 - IDs are numbers (`Long` on the backend) — treat them as opaque, don't assume ordering beyond "higher = created later".
 
 ---
@@ -81,55 +82,132 @@ type AuthResponse = {
 };
 ```
 
-There is no separate "logout" endpoint — logging out is a client-side action (discard the stored
-tokens). The refresh token remains valid server-side until it expires or is rotated by use; if you
-need hard revocation later, that would be a backend addition.
+`role` is a vestigial global field from before multi-tournament support — it no longer gates
+anything (tournament ownership does, see section 3). There is no separate "logout" endpoint —
+logging out is a client-side action (discard the stored tokens).
 
 ---
 
-## 3. Joining the tournament
+## 3. Tournaments
 
-Predictions and most gameplay actions require the player to have explicitly joined. Do this once,
-right after first sign-in (or gate the prediction UI on it and prompt when they try to predict).
+Anyone signed in can create a tournament and becomes its **owner** — the only one who can curate
+its matches. A tournament is joined by a short shared **join code**, not by browsing a public
+list. Right now every tournament uses the `solo_points` format: everyone predicts the same
+matches independently, no head-to-head pairing (round-robin/playoff formats are a planned
+follow-up, not yet available).
 
-`POST /api/tournament/join` (auth required)
+### 3.1 Create
 
-No body. Returns:
+`POST /api/tournaments` (auth required)
 ```json
-{ "tournamentId": 1, "joinedAt": "2026-08-14T12:00:00Z" }
+{ "name": "Friday Night League", "playerLimit": 20 }
 ```
-Idempotent — calling it again for an already-joined user just returns the original join info, no
-error.
+`playerLimit` must be 2–50. The creator is automatically added as a player too (counted toward
+the limit) as well as being the owner. Returns `201` `TournamentResponse` (below), including the
+`joinCode` to share.
 
-If a player hasn't joined and calls `POST /api/predictions`, they get `403 Forbidden`
-("Join the tournament before submitting predictions") — use that to drive a "join first" prompt.
+### 3.2 Join
+
+`POST /api/tournaments/join` (auth required)
+```json
+{ "joinCode": "7F3K9Q" }
+```
+Case-insensitive. Returns `200` `TournamentResponse`. `404` if the code doesn't exist, `409` if
+the tournament has already started or is full. Joining a second time as an existing member is a
+no-op that just returns the current state (as long as it's still `open`).
+
+**Auto-start:** if this join fills the tournament to its `playerLimit`, it flips to `active`
+automatically in the same request — no separate call needed.
+
+### 3.3 Start now
+
+`POST /api/tournaments/{id}/start` (owner only)
+
+No body. Flips an `open` tournament straight to `active` regardless of current player count —
+even a lone owner can start and play solo. `403` if you're not the owner, `409` if it's already
+started.
+
+### 3.4 List mine / get one
+
+`GET /api/tournaments/mine` (auth required) — tournaments you own or have joined:
+```ts
+type TournamentResponse[]
+```
+
+`GET /api/tournaments/{id}` (auth required, no membership needed) — lets someone preview a
+tournament (name, status, player count) before deciding whether to join it with a shared code.
+
+### 3.5 Shape
+
+```ts
+type TournamentResponse = {
+  id: number;
+  name: string;
+  ownerUserId: number;
+  joinCode: string;
+  playerLimit: number;
+  playerCount: number;
+  format: "solo_points"; // only value in use today
+  status: "open" | "active"; // open = accepting joins; active = started, matches can be created
+  createdAt: string;
+};
+```
+
+### 3.6 Lifecycle rules that affect the UI
+
+- **Matches/rounds can only be created once a tournament is `active`.** If you build a "prepare
+  round 1 while waiting for players" flow, it'll get `409` until the owner starts the tournament
+  (or the cap is reached) — gate that UI on `status`.
+- Everything below this point (matches, predictions, standings, live, calendar) is scoped to one
+  tournament by `{tournamentId}` in the path, and requires the caller to be a **member** of that
+  tournament (owner included, since owners auto-join) — `403` otherwise.
 
 ---
 
-## 4. Calendar & rounds
+## 4. Match curation (owner only)
 
-`GET /api/rounds/current` — the round the UI should show by default (prefers a live round, then
-the next scheduled one, then the last finished one if nothing else exists yet):
-```json
-{ "id": 5, "tournamentId": 1, "roundNumber": 5, "status": "scheduled" }
+`GET /api/fixtures/candidates?league=<optional>&from=<date>&to=<date>` (auth required, **not**
+owner-restricted — it's just public fixture search, useful for any owner building their own
+tournament) — search upcoming real-world fixtures to build the next round from:
+```ts
+type FixtureCandidateResponse = {
+  externalMatchId: string;
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  kickoffAt: string;
+}[]
 ```
-`status` is one of `"scheduled" | "live" | "finished"`.
 
-`GET /api/calendar` — every round with its matches, for a full past/upcoming schedule view:
+`POST /api/tournaments/{id}/matches` (owner only, tournament must be `active`) — create a round
+from exactly 9 selected fixtures:
 ```json
-[
-  {
-    "round": { "id": 1, "tournamentId": 1, "roundNumber": 1, "status": "finished" },
-    "matches": [ /* AdminMatchResponse[], see below */ ]
-  },
-  ...
-]
+{
+  "roundNumber": 1,
+  "matches": [
+    { "externalMatchId": "12345", "league": "Premier League", "homeTeam": "Arsenal", "awayTeam": "Chelsea", "kickoffAt": "2026-08-20T15:00:00Z" },
+    /* ... exactly 9 total */
+  ]
+}
 ```
+`400` if not exactly 9 matches, `403` if you're not the owner, `409` if the tournament hasn't
+started. Returns `201` with the created `AdminMatchResponse[]`. Different tournaments can
+independently feature the same real-world fixture — each gets its own row and its own scoring.
+
+`PATCH /api/tournaments/{id}/matches/{matchId}/score` (owner only) — manual override (alongside
+the automatic live sync):
+```json
+{ "homeScore": 2, "awayScore": 1, "status": "finished" }
+```
+`status` is optional (`"scheduled" | "live" | "finished"`) — omit it to only change the score.
+Every call here is audit-logged server-side and immediately re-triggers scoring + a live
+broadcast.
 
 ### AdminMatchResponse
 ```ts
 type AdminMatchResponse = {
   id: number;
+  tournamentId: number;
   externalMatchId: string;   // the provider's own match id, not usually needed by the UI
   league: string;
   homeTeam: string;
@@ -144,7 +222,31 @@ type AdminMatchResponse = {
 
 ---
 
-## 5. Predictions
+## 5. Calendar & rounds
+
+`GET /api/tournaments/{id}/rounds/current` — the round the UI should show by default (prefers a
+live round, then the next scheduled one, then the last finished one if nothing else exists yet):
+```json
+{ "id": 5, "tournamentId": 1, "roundNumber": 1, "status": "live" }
+```
+`status` is one of `"scheduled" | "live" | "finished"` and advances automatically as its matches
+progress — you don't need to poll match statuses individually to know when a round is done.
+
+`GET /api/tournaments/{id}/calendar` — every round with its matches, for a full past/upcoming
+schedule view:
+```json
+[
+  {
+    "round": { "id": 1, "tournamentId": 1, "roundNumber": 1, "status": "finished" },
+    "matches": [ /* AdminMatchResponse[], see section 4 */ ]
+  },
+  ...
+]
+```
+
+---
+
+## 6. Predictions
 
 `POST /api/predictions` (auth required)
 ```json
@@ -152,7 +254,8 @@ type AdminMatchResponse = {
 ```
 Scores must be integers `0`–`20`. This is an **upsert** — calling it again for the same
 `matchId` updates the existing prediction rather than creating a second one, so "submit" and
-"edit" are the same call.
+"edit" are the same call. You must be a member of the tournament that `matchId` belongs to (join
+it first) — `403` otherwise.
 
 **Deadline rule the UI must enforce itself:** predictions are only meaningful up until a match's
 `kickoffAt`. The backend still accepts a late write (for transparency) but silently excludes it
@@ -176,20 +279,27 @@ type PredictionResponse = {
 
 There is currently no "get my predictions for this round" GET endpoint — the client should track
 what it submitted locally, or read prediction outcomes back via the user stats endpoint (section
-7) once results are in. Flag to your backend contact if you need a dedicated list endpoint.
+8) once results are in. Flag to your backend contact if you need a dedicated list endpoint.
 
 ---
 
-## 6. Live screen
+## 7. Live screen
 
 Two ways to get the same data — use the WebSocket for the live in-progress screen, and the REST
 endpoint anywhere else you just need a snapshot (e.g. deep-linking, refresh-on-focus).
 
-`GET /api/live` — current round's matches + standings + in-progress round scores, one-shot.
+`GET /api/tournaments/{id}/live` (auth via normal `Authorization` header) — current round's
+matches + standings + in-progress round scores, one-shot.
 
-`WS /ws/live` — same payload, pushed immediately on connect and again every time a score changes
-(server polls the football provider every 5 minutes while matches are live, so don't expect
-faster-than-that updates). No client→server messages are needed; just listen.
+`WS /ws/tournaments/{id}/live?token=<accessToken>` — same payload, pushed immediately on connect
+and again every time a score changes (server polls the football provider every 5 minutes while
+matches are live, so don't expect faster-than-that updates). No client→server messages are
+needed; just listen.
+
+**Auth is different for this one endpoint:** browsers' WebSocket API can't attach a custom
+`Authorization` header to the handshake, so the access token goes as a `token` query parameter
+instead. The server closes the connection immediately (policy violation) if the token is missing,
+invalid, or the caller isn't a member of that tournament.
 
 ```ts
 type LiveStateResponse = {
@@ -202,18 +312,17 @@ type LiveStateResponse = {
     homeScore: number | null;
     awayScore: number | null;
   }[];
-  standings: {          // full tournament table, with this round's provisional goals layered in
+  standings: {          // full tournament leaderboard, live-updating
     rank: number;
     userId: number;
     name: string;
-    totalGoals: number;
-    totalExactScores: number;
+    totalPoints: number;
+    exactCount: number;
   }[];
-  roundScores: {         // per-player breakdown for the round currently in progress only
+  roundScores: {         // per-player points for the round currently in progress only
     userId: number;
     name: string;
-    pointsRaw: number;       // raw points before the 3-points-=-1-goal conversion
-    provisionalGoals: number; // this round's goals so far — NOT final until the round finishes
+    roundPoints: number; // provisional until the round finishes, but the total never changes after
   }[];
 };
 ```
@@ -223,110 +332,70 @@ type LiveStateResponse = {
 if the provider later reports an ET/penalty result. Don't build UI that expects an ET/penalty
 score to eventually appear.
 
-`roundScores` entries disappear once the round is fully finished (all 9 matches finished) — at
-that point their goals have been folded into `standings.totalGoals` permanently, and any leftover
-points below a multiple of 3 are discarded, not carried to the next round.
-
 ---
 
-## 7. Standings, top scorers, personal stats
+## 8. Standings, top scorers, personal stats
 
-`GET /api/standings` — the authoritative leaderboard (finished rounds only, no in-progress
-round included — use `/api/live` if you want the live-updating version):
+All three require tournament membership (`403` otherwise).
+
+`GET /api/tournaments/{id}/standings` — the live leaderboard:
 ```ts
-type StandingEntryResponse = {
+type SoloStandingEntryResponse = {
   rank: number;
   userId: number;
   name: string;
-  totalGoals: number;
-  totalExactScores: number;
-  roundsPlayed: number;
+  totalPoints: number;
+  exactCount: number;
 }[]
 ```
+An exact-score prediction is worth 3 points directly (not tracked as a separate "goal" unit, since
+`solo_points` tournaments have no head-to-head match to convert goals for). Tie-break is
+`totalPoints` then `exactCount`.
 
-`GET /api/top-scorers` — same ranking, "bombardier" framing:
-```ts
-type TopScorerEntryResponse = { rank: number; userId: number; name: string; totalGoals: number }[]
-```
+`GET /api/tournaments/{id}/top-scorers` — same ranking as standings today (there's no separate
+"goals" metric in `solo_points`; this endpoint exists for API consistency with formats coming
+later where it will differ).
 
-`GET /api/users/{id}/stats` — a specific player's own numbers:
+`GET /api/tournaments/{id}/users/{userId}/stats` — a specific player's numbers **for this
+tournament** (a user's stats can differ across the different tournaments they belong to):
 ```ts
-type UserStatsResponse = {
+type SoloUserStatsResponse = {
   userId: number;
   name: string;
-  totalGoals: number;
-  totalExactScores: number;
-  roundsPlayed: number;
+  totalPoints: number;
+  exactCount: number;
   totalPredictions: number;
   scoredPredictions: number;  // predictions whose match has finished and been scored
   accuracy: number;           // 0.0–1.0, correct-or-better predictions ÷ scored predictions
 };
 ```
-No auth is enforced on this one currently (any signed-in-or-not client can view any user's public
-stats) — call out to your backend contact if per-user privacy is needed later.
 
 ---
 
-## 8. Scoring rules (for building result/points UI)
+## 9. Scoring rules (for building result/points UI)
 
 | Prediction vs. actual result | Award |
 |---|---|
-| Exact score (including exact draws) | **1 goal**, direct |
+| Exact score (including exact draws) | **3 points** |
 | Correct win/loss + correct goal difference, not exact | 2 points |
 | Correct win/loss, wrong goal difference | 1 point |
 | Correct draw, wrong exact score | 1 point (always — draws never get 2, even though the "difference" of 0 also matches) |
 | Wrong outcome | 0 |
 
-Points convert to goals at the end of each round: `goals = floor(points / 3) + exactScoreCount`.
-Any remaining points below the next multiple of 3 are **discarded**, not carried into the next
-round. This means a player's `pointsAwarded` on an individual `PredictionResponse` is not
-directly "their score" — it only becomes goals once folded into the round total.
-
----
-
-## 9. Admin-only endpoints
-
-Require a JWT whose `role` claim is `"admin"` (401 if unauthenticated, 403 if authenticated but
-not an admin).
-
-`GET /api/admin/fixtures/candidates?league=<optional>&from=<date>&to=<date>` — search upcoming
-real-world fixtures to build the next round from:
-```ts
-type FixtureCandidateResponse = {
-  externalMatchId: string;
-  league: string;
-  homeTeam: string;
-  awayTeam: string;
-  kickoffAt: string;
-}[]
-```
-
-`POST /api/admin/matches` — create a round from exactly 9 selected fixtures:
-```json
-{
-  "roundNumber": 6,
-  "matches": [
-    { "externalMatchId": "12345", "league": "Premier League", "homeTeam": "Arsenal", "awayTeam": "Chelsea", "kickoffAt": "2026-08-20T15:00:00Z" },
-    /* ... exactly 9 total */
-  ]
-}
-```
-`400` if not exactly 9 matches. Returns `201` with the created `AdminMatchResponse[]`.
-
-`PATCH /api/admin/matches/{id}/score` — manual override (alongside the automatic live sync):
-```json
-{ "homeScore": 2, "awayScore": 1, "status": "finished" }
-```
-`status` is optional (`"scheduled" | "live" | "finished"`) — omit it to only change the score.
-Every call here is audit-logged server-side and immediately re-triggers scoring + a live
-broadcast, so the effect is visible on `/ws/live` right away.
+Unlike the internal per-prediction storage (where an exact score is tracked as a separate
+"exact" flag rather than literal points), the **standings total** you see via the API always
+already includes that conversion — `totalPoints` is ready to display as-is, no client-side math
+needed.
 
 ---
 
 ## 10. What's intentionally not here yet
 
+- Round-robin and playoff tournament formats — only `solo_points` exists today; tournament
+  creation doesn't accept a `format` field yet because there's nothing else to choose.
 - No endpoint to list "my predictions for a round" — track submissions client-side for now.
-- No per-user privacy on `/api/users/{id}/stats`.
+- No way for an owner to remove a player, change the player limit, or transfer ownership after
+  creation.
 - No explicit logout/session-revocation endpoint — discard tokens client-side.
 - No push notifications — the live experience is WebSocket-only.
 

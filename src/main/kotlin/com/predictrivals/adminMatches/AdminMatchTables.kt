@@ -1,5 +1,6 @@
 package com.predictrivals.adminMatches
 
+import com.predictrivals.tournament.TournamentsTable
 import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.javatime.timestampWithTimeZone
 
@@ -11,7 +12,8 @@ enum class MatchStatus {
 
 object AdminMatchesTable : Table("admin_ref.admin_matches") {
     val id = long("id").autoIncrement()
-    val externalMatchId = varchar("external_match_id", 64).uniqueIndex()
+    val tournamentId = long("tournament_id").references(TournamentsTable.id)
+    val externalMatchId = varchar("external_match_id", 64)
     val league = varchar("league", 128)
     val homeTeam = varchar("home_team", 128)
     val awayTeam = varchar("away_team", 128)
@@ -23,4 +25,8 @@ object AdminMatchesTable : Table("admin_ref.admin_matches") {
     val updatedAt = timestampWithTimeZone("updated_at")
 
     override val primaryKey = PrimaryKey(id)
+
+    init {
+        uniqueIndex(tournamentId, externalMatchId)
+    }
 }

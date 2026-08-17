@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class AdminMatchResponse(
     val id: Long,
+    val tournamentId: Long,
     val externalMatchId: String,
     val league: String,
     val homeTeam: String,

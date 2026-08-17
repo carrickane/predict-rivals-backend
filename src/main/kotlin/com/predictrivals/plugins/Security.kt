@@ -34,13 +34,3 @@ fun ApplicationCall.principalUserId(): Long =
         ?.asLong()
         ?: throw ApiException.Unauthorized()
 
-fun ApplicationCall.principalRole(): String =
-    principal<JWTPrincipal>()
-        ?.payload
-        ?.getClaim(JWT_CLAIM_ROLE)
-        ?.asString()
-        ?: throw ApiException.Unauthorized()
-
-fun ApplicationCall.requireAdmin() {
-    if (principalRole() != "admin") throw ApiException.Forbidden("Admin role required")
-}

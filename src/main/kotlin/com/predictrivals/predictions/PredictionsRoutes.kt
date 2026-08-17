@@ -31,13 +31,13 @@ fun Route.predictionsRoutes(
                     throw ApiException.BadRequest("Predicted scores must be between 0 and 20")
                 }
 
-                val tournament = tournamentRepository.findActiveTournament()
-                if (!tournamentRepository.isMember(userId, tournament.id)) {
+                val match = adminMatchRepository.getOrThrow(body.matchId)
+
+                if (!tournamentRepository.isMember(userId, match.tournamentId)) {
                     throw ApiException.Forbidden("Join the tournament before submitting predictions")
                 }
 
-                val match = adminMatchRepository.getOrThrow(body.matchId)
-                val round = roundsRepository.findByTournamentAndNumber(tournament.id, match.roundNumber)
+                val round = roundsRepository.findByTournamentAndNumber(match.tournamentId, match.roundNumber)
                     ?: throw ApiException.NotFound("Round for match ${body.matchId} not found")
 
                 // Defense in depth: the client should stop allowing edits at kickoff, but if a

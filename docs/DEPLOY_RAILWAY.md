@@ -109,34 +109,17 @@ Setting the variables triggers a redeploy automatically. Otherwise, click **Depl
 right of the service view. Watch it under **Deployments** → the latest deployment → **View Logs**.
 
 A successful boot looks like Flyway applying migrations (`V1__init_schemas` through
-`V6__admin_audit_log`) followed by Ktor's own startup log line (something like
+`V8__admin_matches_tournament_scoping`) followed by Ktor's own startup log line (something like
 `Responding at http://0.0.0.0:8080`). If it crashes instead, the logs will show which env var or
 DB connection failed — 90% of first-deploy failures are a missing/misreferenced variable from
 step 5.
 
 ---
 
-## 7. Seed a tournament
+## 7. Smoke test
 
-There's no admin endpoint for creating the tournament itself (the app assumes one tournament is
-active at a time — see the design doc) — you create that one row directly in Postgres. In
-Railway, click the **Postgres** service → **Data** tab (or **Connect** → copy the psql command
-and run it locally), and run:
-
-```sql
-INSERT INTO game.tournaments (name, season, start_date, end_date)
-VALUES ('Predict Rivals 2026', '2026', '2026-01-01', '2026-12-31');
-```
-
-Without this row, every endpoint that depends on "the active tournament" (`/api/rounds/current`,
-`/api/tournament/join`, `/api/standings`, predictions, admin match creation) returns
-`404 No active tournament`.
-
----
-
-## 8. Smoke test
-
-Once the tournament row exists, hit the public URL from step 4:
+There's no separate seeding step — tournaments are created through the API by any signed-in user
+(no admin/DB access needed). Hit the public URL from step 4:
 
 ```bash
 curl -X POST https://<your-app>.up.railway.app/api/auth/email/register \
@@ -145,18 +128,21 @@ curl -X POST https://<your-app>.up.railway.app/api/auth/email/register \
 ```
 
 A `201` with an `accessToken`/`refreshToken`/`user` back confirms the app, the database
-connection, and the migrations are all working end-to-end. From there:
+connection, and the migrations are all working end-to-end. From there, using that response's
+`accessToken`:
 
 ```bash
-curl https://<your-app>.up.railway.app/api/rounds/current
+curl -X POST https://<your-app>.up.railway.app/api/tournaments \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <accessToken>" \
+  -d '{"name":"Test League","playerLimit":10}'
 ```
 
-returns `404 No rounds found` until an admin actually creates a round via
-`POST /api/admin/matches` (see [docs/API.md](API.md) section 9) — that's expected, not a failure.
+A `201` with a `joinCode` confirms the tournament flow end-to-end too. See
+[docs/API.md](API.md) for the full flow (join, start, create matches, predict).
 
 ---
 
-## 9. Redeploying later
+## 8. Redeploying later
 
 Every push to the connected branch (default `master`) triggers an automatic redeploy — nothing
 else to do. Flyway migrations are idempotent and run on every boot, so new migration files you
@@ -175,4 +161,4 @@ railway link          # choose the project you created in step 2
 railway up            # builds the Dockerfile and deploys
 ```
 
-Steps 3–8 above are identical either way — only how the code gets to Railway changes.
+Steps 3–7 above are identical either way — only how the code gets to Railway changes.

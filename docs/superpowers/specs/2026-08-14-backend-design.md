@@ -178,6 +178,13 @@ This gives the live screen real match scores, the live standings table, and play
 
 ## 10. API surface
 
+> **Superseded** by the multi-tournament rework — see
+> [2026-08-17-multi-tournament-design.md](2026-08-17-multi-tournament-design.md) section 1 for the
+> current route table, and [docs/API.md](../../API.md) for the full up-to-date reference. This
+> section is kept for history: it reflected a single implicit global tournament with a separate
+> global admin role, both of which no longer exist (tournaments are user-created and joined by
+> code; match curation is gated by per-tournament ownership, not a global role).
+
 **Admin**
 - `POST /api/admin/matches` — create the round's 9 matches (candidates sourced from `FootballDataProvider.searchUpcomingFixtures`)
 - `PATCH /api/admin/matches/:id/score` — manual score override, alongside the automatic live sync worker
@@ -205,7 +212,13 @@ This gives the live screen real match scores, the live standings table, and play
 - Login/register error responses are generic ("invalid credentials") rather than distinguishing "no such user" from "wrong password," to avoid account enumeration.
 
 **Authorization**
-- `users` gains a `role` field (`player` / `admin`). Every `/api/admin/*` route requires `role = admin`, enforced by a Ktor auth plugin — not just hidden in a UI.
+- Superseded by the multi-tournament rework: the global `role = admin` gate described below no
+  longer exists. Match curation is authorized per-tournament instead — the caller must be that
+  tournament's `owner_user_id` — see
+  [2026-08-17-multi-tournament-design.md](2026-08-17-multi-tournament-design.md) section 1. The
+  `role` column stays in the schema, unused, in case a genuine site-wide admin capability is
+  needed later.
+- ~~`users` gains a `role` field (`player` / `admin`). Every `/api/admin/*` route requires `role = admin`, enforced by a Ktor auth plugin — not just hidden in a UI.~~
 - Prediction writes always scope to the authenticated user's own id from the JWT; a client-supplied user id is never accepted for a write.
 - The `tournament_memberships` gate is enforced server-side on every prediction write, not only checked client-side.
 

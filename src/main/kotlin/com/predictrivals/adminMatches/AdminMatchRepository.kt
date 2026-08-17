@@ -13,6 +13,7 @@ import java.time.OffsetDateTime
 
 data class AdminMatchRecord(
     val id: Long,
+    val tournamentId: Long,
     val externalMatchId: String,
     val league: String,
     val homeTeam: String,
@@ -26,10 +27,11 @@ data class AdminMatchRecord(
 
 class AdminMatchRepository {
 
-    suspend fun createRoundMatches(roundNumber: Int, matches: List<NewRoundMatch>): List<AdminMatchRecord> = dbQuery {
+    suspend fun createRoundMatches(tournamentId: Long, roundNumber: Int, matches: List<NewRoundMatch>): List<AdminMatchRecord> = dbQuery {
         val now = OffsetDateTime.now()
         matches.map { match ->
             val id = AdminMatchesTable.insert {
+                it[AdminMatchesTable.tournamentId] = tournamentId
                 it[externalMatchId] = match.externalMatchId
                 it[league] = match.league
                 it[homeTeam] = match.homeTeam
@@ -52,8 +54,9 @@ class AdminMatchRepository {
             .singleOrNull()
     }
 
-    suspend fun listByRoundNumber(roundNumber: Int): List<AdminMatchRecord> = dbQuery {
-        AdminMatchesTable.selectAll().where { AdminMatchesTable.roundNumber eq roundNumber }
+    suspend fun listByTournamentAndRound(tournamentId: Long, roundNumber: Int): List<AdminMatchRecord> = dbQuery {
+        AdminMatchesTable
+            .selectAll().where { (AdminMatchesTable.tournamentId eq tournamentId) and (AdminMatchesTable.roundNumber eq roundNumber) }
             .map { it.toRecord() }
     }
 
@@ -87,6 +90,7 @@ class AdminMatchRepository {
 
     private fun ResultRow.toRecord() = AdminMatchRecord(
         id = this[AdminMatchesTable.id],
+        tournamentId = this[AdminMatchesTable.tournamentId],
         externalMatchId = this[AdminMatchesTable.externalMatchId],
         league = this[AdminMatchesTable.league],
         homeTeam = this[AdminMatchesTable.homeTeam],

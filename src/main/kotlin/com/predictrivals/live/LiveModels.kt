@@ -18,16 +18,15 @@ data class LiveStandingEntry(
     val rank: Int,
     val userId: Long,
     val name: String,
-    val totalGoals: Int,
-    val totalExactScores: Int,
+    val totalPoints: Int,
+    val exactCount: Int,
 )
 
 @Serializable
 data class LiveRoundScoreEntry(
     val userId: Long,
     val name: String,
-    val pointsRaw: Int,
-    val provisionalGoals: Int,
+    val roundPoints: Int,
 )
 
 @Serializable

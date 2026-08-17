@@ -2,15 +2,28 @@ package com.predictrivals.tournament
 
 import com.predictrivals.auth.UsersTable
 import org.jetbrains.exposed.sql.Table
-import org.jetbrains.exposed.sql.javatime.date
 import org.jetbrains.exposed.sql.javatime.timestampWithTimeZone
+
+enum class TournamentFormat {
+    solo_points,
+    round_robin,
+    playoff,
+}
+
+enum class TournamentStatus {
+    open,
+    active,
+}
 
 object TournamentsTable : Table("game.tournaments") {
     val id = long("id").autoIncrement()
     val name = varchar("name", 128)
-    val season = varchar("season", 32)
-    val startDate = date("start_date")
-    val endDate = date("end_date")
+    val ownerUserId = long("owner_user_id").references(UsersTable.id)
+    val joinCode = varchar("join_code", 8).uniqueIndex()
+    val playerLimit = integer("player_limit")
+    val format = varchar("format", 16)
+    val status = varchar("status", 16)
+    val createdAt = timestampWithTimeZone("created_at")
 
     override val primaryKey = PrimaryKey(id)
 }

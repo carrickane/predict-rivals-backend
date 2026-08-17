@@ -1,8 +1,11 @@
 # Predict Rivals — Backend
 
-Kotlin + Ktor backend for the Predict Rivals football prediction tournament. See
+Kotlin + Ktor backend for Predict Rivals — user-created, joinable football prediction
+tournaments. See
 [docs/superpowers/specs/2026-08-14-backend-design.md](docs/superpowers/specs/2026-08-14-backend-design.md)
-for the full design (architecture, data model, scoring rules, security).
+for the original design (architecture, data model, scoring rules, security) and
+[docs/superpowers/specs/2026-08-17-multi-tournament-design.md](docs/superpowers/specs/2026-08-17-multi-tournament-design.md)
+for the multi-tournament rework, or [docs/API.md](docs/API.md) for the current API reference.
 
 ## Prerequisites
 
@@ -47,9 +50,9 @@ tests use Testcontainers, which requires Docker to be running.
 ```
 src/main/kotlin/com/predictrivals/
   auth/          # AuthProvider + email/Google/Facebook providers, JWT issuance
-  tournament/     # Tournament, join-tournament
+  tournament/     # User-created tournaments, join-by-code, capacity/start lifecycle
   rounds/         # Round lifecycle, calendar
-  adminMatches/   # Admin-curated matches, fixture search
+  adminMatches/   # Per-tournament owner-curated matches, fixture search
   predictions/    # Submit/update predictions
   scoring/        # Scoring engine + round-level goal conversion
   standings/      # Leaderboard, top scorers, user stats

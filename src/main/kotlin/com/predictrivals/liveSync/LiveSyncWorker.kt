@@ -26,6 +26,10 @@ private val POLL_INTERVAL = 5.minutes
  *  - the instant a match's provider status leaves normal time (FT, AET, penalties, ...),
  *    freezes the score exactly as last polled and marks the match finished — extra time
  *    and penalty shootouts are never polled or scored
+ *
+ * Different tournaments can independently feature the same real-world fixture, so live matches
+ * are grouped by `externalMatchId` before polling — one API request per real fixture regardless
+ * of how many tournaments include it, and a score update applies to every tournament's copy.
  */
 class LiveSyncWorker(
     private val adminMatchRepository: AdminMatchRepository,
@@ -63,32 +67,38 @@ class LiveSyncWorker(
         val liveMatches = adminMatchRepository.listByStatus(MatchStatus.live)
         if (liveMatches.isEmpty()) return
 
-        val byExternalId = liveMatches.associateBy { it.externalMatchId }
-        val liveScores = footballDataProvider.getLiveScores(liveMatches.map { it.externalMatchId })
-        var anyChange = false
+        val byExternalId = liveMatches.groupBy { it.externalMatchId }
+        val liveScores = footballDataProvider.getLiveScores(byExternalId.keys.toList())
+        val changedTournamentIds = mutableSetOf<Long>()
 
         liveScores.forEach { liveScore ->
-            val match = byExternalId[liveScore.externalMatchId] ?: return@forEach
+            val matchesForThisFixture = byExternalId[liveScore.externalMatchId] ?: return@forEach
 
             when {
                 liveScore.providerStatus in PRE_MATCH_STATUSES -> Unit // not actually underway yet, leave as-is
 
                 NormalTimeStatuses.isNormalTime(liveScore.providerStatus) -> {
-                    if (liveScore.homeScore != match.homeScore || liveScore.awayScore != match.awayScore) {
-                        adminMatchRepository.updateScoreAndStatus(match.id, liveScore.homeScore, liveScore.awayScore, MatchStatus.live)
-                        scoringService.recalculateMatch(match.id)
-                        anyChange = true
+                    matchesForThisFixture.forEach { match ->
+                        if (liveScore.homeScore != match.homeScore || liveScore.awayScore != match.awayScore) {
+                            adminMatchRepository.updateScoreAndStatus(match.id, liveScore.homeScore, liveScore.awayScore, MatchStatus.live)
+                            scoringService.recalculateMatch(match.id)
+                            changedTournamentIds += match.tournamentId
+                        }
                     }
                 }
 
                 else -> {
-                    adminMatchRepository.updateScoreAndStatus(match.id, liveScore.homeScore, liveScore.awayScore, MatchStatus.finished)
-                    scoringService.recalculateMatch(match.id)
-                    anyChange = true
+                    matchesForThisFixture.forEach { match ->
+                        adminMatchRepository.updateScoreAndStatus(match.id, liveScore.homeScore, liveScore.awayScore, MatchStatus.finished)
+                        scoringService.recalculateMatch(match.id)
+                        changedTournamentIds += match.tournamentId
+                    }
                 }
             }
         }
 
-        if (anyChange) liveHub.broadcast(liveStateService.buildCurrentState())
+        changedTournamentIds.forEach { tournamentId ->
+            liveHub.broadcast(tournamentId, liveStateService.buildCurrentState(tournamentId))
+        }
     }
 }

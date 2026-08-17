@@ -1,7 +1,8 @@
 package com.predictrivals
 
 import com.predictrivals.adminMatches.AdminMatchRepository
-import com.predictrivals.adminMatches.adminMatchRoutes
+import com.predictrivals.adminMatches.fixtureRoutes
+import com.predictrivals.adminMatches.tournamentMatchRoutes
 import com.predictrivals.auth.AuthProviders
 import com.predictrivals.auth.AuthRepository
 import com.predictrivals.auth.TokenService
@@ -95,7 +96,7 @@ fun Application.module() {
     )
 
     // Live
-    val liveStateService = LiveStateService(tournamentRepository, roundsRepository, adminMatchRepository, standingsRepository, roundScoresRepository)
+    val liveStateService = LiveStateService(roundsRepository, adminMatchRepository, standingsRepository)
     val liveHub = LiveHub()
 
     // Plugins
@@ -112,10 +113,11 @@ fun Application.module() {
         tournamentRoutes(tournamentRepository)
         roundsRoutes(roundsRepository, tournamentRepository)
         calendarRoutes(roundsRepository, adminMatchRepository, tournamentRepository)
-        adminMatchRoutes(adminMatchRepository, roundsRepository, tournamentRepository, footballDataProvider, scoringService, auditLogRepository, liveStateService, liveHub)
+        fixtureRoutes(footballDataProvider)
+        tournamentMatchRoutes(adminMatchRepository, roundsRepository, tournamentRepository, scoringService, auditLogRepository, liveStateService, liveHub)
         predictionsRoutes(predictionsRepository, adminMatchRepository, tournamentRepository, roundsRepository)
-        standingsRoutes(standingsRepository, predictionsRepository, tournamentRepository)
-        liveRoutes(liveStateService, liveHub)
+        standingsRoutes(standingsRepository, tournamentRepository)
+        liveRoutes(liveStateService, liveHub, tournamentRepository, jwtService)
     }
 
     val liveSyncWorker = LiveSyncWorker(adminMatchRepository, footballDataProvider, scoringService, liveStateService, liveHub)
