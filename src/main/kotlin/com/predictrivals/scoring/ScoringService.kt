@@ -7,7 +7,8 @@ import com.predictrivals.predictions.PredictionsRepository
 import com.predictrivals.rounds.RoundRecord
 import com.predictrivals.rounds.RoundStatus
 import com.predictrivals.rounds.RoundsRepository
-import com.predictrivals.standings.StandingsRepository
+import com.predictrivals.roundrobin.RoundRobinStandingsRepository
+import com.predictrivals.roundrobin.TournamentPairingsRepository
 import com.predictrivals.tournament.TournamentFormat
 import com.predictrivals.tournament.TournamentRepository
 
@@ -16,10 +17,9 @@ import com.predictrivals.tournament.TournamentRepository
  * changes, and keeps the round's lifecycle status (scheduled -> live -> finished) in sync for
  * every format — that status is what "current round" detection relies on. For `solo_points`
  * tournaments that's the whole job — no round_scores write, no standings write, since standings
- * are computed live from predictions directly (see StandingsRepository.getSoloStandings). The
- * round_scores-freeze-then-apply-to-standings path below is reserved for round_robin/playoff
- * (phase 2), where a round's goals become a head-to-head match score and genuinely need to be
- * frozen once the round finishes.
+ * are computed live from predictions directly (see StandingsRepository.getSoloStandings). For
+ * `round_robin`, once a round finishes, each pair's frozen round-goals get compared to produce
+ * that matchday's win/draw/loss (see RoundRobinStandingsRepository).
  */
 class ScoringService(
     private val predictionsRepository: PredictionsRepository,
@@ -27,7 +27,8 @@ class ScoringService(
     private val adminMatchRepository: AdminMatchRepository,
     private val roundsRepository: RoundsRepository,
     private val tournamentRepository: TournamentRepository,
-    private val standingsRepository: StandingsRepository,
+    private val pairingsRepository: TournamentPairingsRepository,
+    private val roundRobinStandingsRepository: RoundRobinStandingsRepository,
 ) {
 
     /** Called whenever a match's score changes — from a live poll update or a manual owner override. */
@@ -65,7 +66,7 @@ class ScoringService(
         val nowAllFinished = roundMatches.isNotEmpty() && roundMatches.all { it.status == MatchStatus.finished.name }
         if (!wasAlreadyFinished && nowAllFinished) {
             roundScoresRepository.freeze(round.id)
-            standingsRepository.applyFinishedRound(round.tournamentId, round.id)
+            applyRoundRobinMatchday(round.tournamentId, round.id, round.roundNumber)
         }
     }
 
@@ -87,5 +88,25 @@ class ScoringService(
         val exactCount = predictions.count { it.isExact == true }
         val goals = ScoringEngine.convertToGoals(pointsRaw, exactCount)
         roundScoresRepository.upsert(userId, roundId, pointsRaw, exactCount, goals)
+    }
+
+    /** Compares each pairing's two frozen round-goals values into a win/draw/loss (or a bye's solo goals-for). */
+    private suspend fun applyRoundRobinMatchday(tournamentId: Long, roundId: Long, roundNumber: Int) {
+        val pairings = pairingsRepository.listForRound(tournamentId, roundNumber)
+        val processed = mutableSetOf<Long>()
+        pairings.forEach { pairing ->
+            if (pairing.playerAUserId in processed) return@forEach
+            val myGoals = roundScoresRepository.find(pairing.playerAUserId, roundId)?.goalsAwarded ?: 0
+            val opponentId = pairing.playerBUserId
+            if (opponentId == null) {
+                roundRobinStandingsRepository.applyByeRound(tournamentId, pairing.playerAUserId, goalsFor = myGoals)
+                processed += pairing.playerAUserId
+                return@forEach
+            }
+            val opponentGoals = roundScoresRepository.find(opponentId, roundId)?.goalsAwarded ?: 0
+            roundRobinStandingsRepository.applyMatchdayResult(tournamentId, pairing.playerAUserId, opponentId, myGoals, opponentGoals)
+            processed += pairing.playerAUserId
+            processed += opponentId
+        }
     }
 }

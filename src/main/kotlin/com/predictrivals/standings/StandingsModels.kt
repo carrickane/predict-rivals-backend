@@ -1,36 +1,44 @@
 package com.predictrivals.standings
 
+import com.predictrivals.roundrobin.RoundRobinStandingRow
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class StandingEntryResponse(
+data class RoundRobinStandingEntryResponse(
     val rank: Int,
     val userId: Long,
     val name: String,
-    val totalGoals: Int,
-    val totalExactScores: Int,
-    val roundsPlayed: Int,
+    val leaguePoints: Int,
+    val wins: Int,
+    val draws: Int,
+    val losses: Int,
+    val goalsFor: Int,
+    val goalsAgainst: Int,
+    val goalDifference: Int,
 )
 
-fun List<StandingRow>.toRanked(): List<StandingEntryResponse> =
+fun List<RoundRobinStandingRow>.toRankedRoundRobin(): List<RoundRobinStandingEntryResponse> =
     mapIndexed { index, row ->
-        StandingEntryResponse(index + 1, row.userId, row.name, row.totalGoals, row.totalExactScores, row.roundsPlayed)
+        RoundRobinStandingEntryResponse(
+            rank = index + 1,
+            userId = row.userId,
+            name = row.name,
+            leaguePoints = row.leaguePoints,
+            wins = row.wins,
+            draws = row.draws,
+            losses = row.losses,
+            goalsFor = row.goalsFor,
+            goalsAgainst = row.goalsAgainst,
+            goalDifference = row.goalsFor - row.goalsAgainst,
+        )
     }
 
 @Serializable
-data class TopScorerEntryResponse(val rank: Int, val userId: Long, val name: String, val totalGoals: Int)
+data class RoundRobinTopScorerEntryResponse(val rank: Int, val userId: Long, val name: String, val goalsFor: Int)
 
-@Serializable
-data class UserStatsResponse(
-    val userId: Long,
-    val name: String,
-    val totalGoals: Int,
-    val totalExactScores: Int,
-    val roundsPlayed: Int,
-    val totalPredictions: Int,
-    val scoredPredictions: Int,
-    val accuracy: Double,
-)
+fun List<RoundRobinStandingRow>.toTopScorersRoundRobin(): List<RoundRobinTopScorerEntryResponse> =
+    sortedByDescending { it.goalsFor }
+        .mapIndexed { index, row -> RoundRobinTopScorerEntryResponse(index + 1, row.userId, row.name, row.goalsFor) }
 
 // --- solo_points format ---
 

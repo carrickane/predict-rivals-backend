@@ -7,7 +7,7 @@ const val MIN_PLAYER_LIMIT = 2
 const val MAX_PLAYER_LIMIT = 50
 
 @Serializable
-data class CreateTournamentRequest(val name: String, val playerLimit: Int)
+data class CreateTournamentRequest(val name: String, val playerLimit: Int, val format: String = "round_robin")
 
 @Serializable
 data class JoinTournamentRequest(val joinCode: String)

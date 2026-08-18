@@ -31,7 +31,7 @@ private const val MAX_JOIN_CODE_ATTEMPTS = 10
 class TournamentRepository {
     private val secureRandom = SecureRandom()
 
-    suspend fun create(name: String, ownerUserId: Long, playerLimit: Int): TournamentRecord = dbQuery {
+    suspend fun create(name: String, ownerUserId: Long, playerLimit: Int, format: String): TournamentRecord = dbQuery {
         val now = OffsetDateTime.now()
         val joinCode = generateUniqueJoinCodeBlocking()
 
@@ -40,7 +40,7 @@ class TournamentRepository {
             it[TournamentsTable.ownerUserId] = ownerUserId
             it[TournamentsTable.joinCode] = joinCode
             it[TournamentsTable.playerLimit] = playerLimit
-            it[format] = TournamentFormat.solo_points.name
+            it[TournamentsTable.format] = format
             it[status] = TournamentStatus.open.name
             it[createdAt] = now
         } get TournamentsTable.id
@@ -79,6 +79,11 @@ class TournamentRepository {
 
     suspend fun memberCount(tournamentId: Long): Long = dbQuery {
         TournamentMembershipsTable.selectAll().where { TournamentMembershipsTable.tournamentId eq tournamentId }.count()
+    }
+
+    suspend fun listMemberUserIds(tournamentId: Long): List<Long> = dbQuery {
+        TournamentMembershipsTable.selectAll().where { TournamentMembershipsTable.tournamentId eq tournamentId }
+            .map { it[TournamentMembershipsTable.userId] }
     }
 
     suspend fun isMember(userId: Long, tournamentId: Long): Boolean = dbQuery {

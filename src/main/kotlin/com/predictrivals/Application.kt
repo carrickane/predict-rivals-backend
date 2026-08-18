@@ -32,6 +32,9 @@ import com.predictrivals.predictions.predictionsRoutes
 import com.predictrivals.rounds.RoundsRepository
 import com.predictrivals.rounds.calendarRoutes
 import com.predictrivals.rounds.roundsRoutes
+import com.predictrivals.roundrobin.RoundRobinStandingsRepository
+import com.predictrivals.roundrobin.TournamentPairingsRepository
+import com.predictrivals.roundrobin.pairingsRoutes
 import com.predictrivals.scoring.RoundScoresRepository
 import com.predictrivals.scoring.ScoringService
 import com.predictrivals.standings.StandingsRepository
@@ -73,6 +76,8 @@ fun Application.module() {
     val predictionsRepository = PredictionsRepository()
     val roundScoresRepository = RoundScoresRepository()
     val standingsRepository = StandingsRepository()
+    val pairingsRepository = TournamentPairingsRepository()
+    val roundRobinStandingsRepository = RoundRobinStandingsRepository(pairingsRepository, roundScoresRepository, roundsRepository)
     val auditLogRepository = AdminAuditLogRepository()
 
     // Auth
@@ -92,11 +97,19 @@ fun Application.module() {
         adminMatchRepository,
         roundsRepository,
         tournamentRepository,
-        standingsRepository,
+        pairingsRepository,
+        roundRobinStandingsRepository,
     )
 
     // Live
-    val liveStateService = LiveStateService(roundsRepository, adminMatchRepository, standingsRepository)
+    val liveStateService = LiveStateService(
+        roundsRepository,
+        adminMatchRepository,
+        standingsRepository,
+        roundRobinStandingsRepository,
+        roundScoresRepository,
+        tournamentRepository,
+    )
     val liveHub = LiveHub()
 
     // Plugins
@@ -110,14 +123,15 @@ fun Application.module() {
 
     routing {
         authRoutes(authProviders, tokenService)
-        tournamentRoutes(tournamentRepository)
+        tournamentRoutes(tournamentRepository, pairingsRepository)
         roundsRoutes(roundsRepository, tournamentRepository)
         calendarRoutes(roundsRepository, adminMatchRepository, tournamentRepository)
         fixtureRoutes(footballDataProvider)
-        tournamentMatchRoutes(adminMatchRepository, roundsRepository, tournamentRepository, scoringService, auditLogRepository, liveStateService, liveHub)
+        tournamentMatchRoutes(adminMatchRepository, roundsRepository, tournamentRepository, pairingsRepository, scoringService, auditLogRepository, liveStateService, liveHub)
         predictionsRoutes(predictionsRepository, adminMatchRepository, tournamentRepository, roundsRepository)
-        standingsRoutes(standingsRepository, tournamentRepository)
+        standingsRoutes(standingsRepository, roundRobinStandingsRepository, tournamentRepository)
         liveRoutes(liveStateService, liveHub, tournamentRepository, jwtService)
+        pairingsRoutes(pairingsRepository, tournamentRepository)
     }
 
     val liveSyncWorker = LiveSyncWorker(adminMatchRepository, footballDataProvider, scoringService, liveStateService, liveHub)

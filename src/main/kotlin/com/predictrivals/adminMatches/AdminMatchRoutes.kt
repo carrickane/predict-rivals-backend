@@ -9,7 +9,9 @@ import com.predictrivals.live.LiveStateService
 import com.predictrivals.plugins.AUTH_JWT
 import com.predictrivals.plugins.principalUserId
 import com.predictrivals.rounds.RoundsRepository
+import com.predictrivals.roundrobin.TournamentPairingsRepository
 import com.predictrivals.scoring.ScoringService
+import com.predictrivals.tournament.TournamentFormat
 import com.predictrivals.tournament.TournamentRepository
 import com.predictrivals.tournament.requireActive
 import com.predictrivals.tournament.requireOwner
@@ -46,6 +48,7 @@ fun Route.tournamentMatchRoutes(
     adminMatchRepository: AdminMatchRepository,
     roundsRepository: RoundsRepository,
     tournamentRepository: TournamentRepository,
+    pairingsRepository: TournamentPairingsRepository,
     scoringService: ScoringService,
     auditLogRepository: AdminAuditLogRepository,
     liveStateService: LiveStateService,
@@ -64,6 +67,12 @@ fun Route.tournamentMatchRoutes(
                 val body = call.receive<CreateRoundMatchesRequest>()
                 if (body.matches.size != MATCHES_PER_ROUND) {
                     throw ApiException.BadRequest("A round must have exactly $MATCHES_PER_ROUND matches")
+                }
+                if (tournament.format == TournamentFormat.round_robin.name) {
+                    val maxRound = pairingsRepository.maxRoundNumber(tournamentId)
+                    if (maxRound != null && body.roundNumber > maxRound) {
+                        throw ApiException.BadRequest("round_robin schedule only has $maxRound rounds for this tournament")
+                    }
                 }
 
                 if (roundsRepository.findByTournamentAndNumber(tournamentId, body.roundNumber) == null) {
